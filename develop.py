@@ -92,6 +92,7 @@ def auto_print_exposure(img, args, brighten=0.0):
 
 
 FACE_TARGET = 0.50   # 遮挡后人脸亮度中位数的目标
+DODGE_STRENGTH = 1.0  # 遮挡力度，0.5 就是减半
 MAX_DODGE = 0.45     # 人脸最多少给这么多相纸曝光（0.45 ≈ 一档多一点）
 
 
@@ -174,6 +175,7 @@ def _dodge_faces(img, out, decode, print_exp, a1, a2):
     if lum >= FACE_TARGET - 0.03:
         return out
     factor = max(1 - MAX_DODGE, (lum / FACE_TARGET) ** (1 / SLOPE))
+    factor = 1 - (1 - factor) * DODGE_STRENGTH
     bright = np.clip(simulate(img, _params(*a1, print_exp * factor, *a2)), 0, 1)
     # 本来就亮的地方（天空、白衣服）不跟着提，免得头周围冒一圈光
     keep_hi = np.clip((0.78 - _lum(out)) / 0.3, 0, 1)[..., None]
@@ -199,10 +201,12 @@ def main():
                     help='边框样式，不填就按胶片自动选')
     ap.add_argument('--date', action='store_true', help='右下角印拍摄日期，像老相机的日期后背')
     ap.add_argument('--no-dodge', action='store_true', help='不给人脸做遮挡提亮')
+    ap.add_argument('--dodge', type=float, default=1.0, help='人脸遮挡力度，默认 1，整个人在背光里的照片试 0.5')
     ap.add_argument('--y', type=float, default=0)
     ap.add_argument('--m', type=float, default=0)
     a = ap.parse_args()
-    global BORDER_STYLE, DATE
+    global BORDER_STYLE, DATE, DODGE_STRENGTH
+    DODGE_STRENGTH = a.dodge
     BORDER_STYLE, DATE = a.style, a.date
     os.makedirs(a.dst, exist_ok=True)
     src = Path(a.src)
