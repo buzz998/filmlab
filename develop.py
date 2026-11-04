@@ -61,7 +61,7 @@ def develop(src, dst_dir, film, paper, ev, fmt, maxside, print_exp, y_shift, m_s
         from border import add_border, stock_label, SLIDE_STOCKS
         look = 'slide' if any(k in film for k in SLIDE_STOCKS) else 'negative'
         im = add_border(im, stock_label(film), frame, look, seed=hash(src.name) & 0xffff)
-    im.save(dst, quality=94)
+    im.save(dst, quality=97)
     return dst
 
 
@@ -72,7 +72,7 @@ def main():
     ap.add_argument('--paper', default='kodak_portra_endura')
     ap.add_argument('--ev', type=float, default=0.0)
     ap.add_argument('--format', type=float, default=35)
-    ap.add_argument('--maxside', type=int, default=3000)
+    ap.add_argument('--maxside', type=int, default=6000)
     ap.add_argument('--print-exposure', type=float, default=1.0)
     ap.add_argument('--no-auto', action='store_true', help='关掉自动测光，按原片亮度')
     ap.add_argument('--border', action='store_true', help='加 135 胶卷边框（齿孔、片边字）')

@@ -102,7 +102,7 @@ def main():
     ap.add_argument('--frame', type=int, default=None)
     ap.add_argument('--look', default='negative', choices=list(LOOKS))
     a = ap.parse_args()
-    add_border(Image.open(a.src).convert('RGB'), a.text, a.frame, a.look).save(a.dst, quality=94)
+    add_border(Image.open(a.src).convert('RGB'), a.text, a.frame, a.look).save(a.dst, quality=97)
 
 
 if __name__ == '__main__':
