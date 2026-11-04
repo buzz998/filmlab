@@ -73,7 +73,7 @@ def _soft(layer_l, r):
     return layer_l.filter(ImageFilter.GaussianBlur(r))
 
 
-def add_border(img, film='kodak_portra_400', frame=1, style=None, date=None, seed=None, text=None):
+def add_border(img, film='kodak_portra_400', frame=1, style=None, date=None, seed=None, text=None, glow=1.0):
     """img: 冲好的 PIL.Image。返回加了边框的新图。"""
     style = style or style_for(film)
     rng = np.random.default_rng(seed)
@@ -86,7 +86,7 @@ def add_border(img, film='kodak_portra_400', frame=1, style=None, date=None, see
     mm = w / 36.0
 
     if style == 'fuji':
-        return _fuji(img, film, frame, date, rng, rnd, mm, portrait, text)
+        return _fuji(img, film, frame, date, rng, rnd, mm, portrait, text, glow)
 
     W, H = int(37.6 * mm), int(35.0 * mm)
     x0, y0 = int(0.8 * mm), int(5.5 * mm)
@@ -108,13 +108,13 @@ def add_border(img, film='kodak_portra_400', frame=1, style=None, date=None, see
 
     # 橙色光：画面边缘渗出来最强，齿孔周围也有一圈
     orange = (255, 120, 40)
-    base += _glow(bright, 1.6 * mm, 0.22, orange)
-    base += _glow(bright, 0.45 * mm, 0.18, orange)
+    base += _glow(bright, 1.6 * mm * glow ** 0.5, 0.22 * glow, orange)
+    base += _glow(bright, 0.45 * mm, 0.18 * glow, orange)
     # 一端轻微漏光（胶卷头尾常见）
     side = rnd.choice([0, 1])
     xs = np.linspace(0, 1, W)[None, :, None]
     leak = np.exp(-(xs if side == 0 else 1 - xs) / 0.06)
-    base += leak * rnd.uniform(25, 60) * np.array((1.0, 0.45, 0.15))[None, None, :]
+    base += leak * rnd.uniform(25, 60) * glow * np.array((1.0, 0.45, 0.15))[None, None, :]
 
     canvas = Image.fromarray(np.clip(base, 0, 255).astype(np.uint8))
 
@@ -160,7 +160,7 @@ def add_border(img, film='kodak_portra_400', frame=1, style=None, date=None, see
     txt = _soft(txt, 0.035 * mm)
     canvas.paste(Image.new('RGB', (W, H), col), mask=txt)
     # 字也有一点光晕
-    glow_txt = np.asarray(canvas, np.float32) + _glow(txt, 0.3 * mm, 0.35, orange)
+    glow_txt = np.asarray(canvas, np.float32) + _glow(txt, 0.3 * mm, 0.35 * glow, orange)
     canvas = Image.fromarray(np.clip(glow_txt, 0, 255).astype(np.uint8))
 
     _paste_photo(canvas, img, x0, y0, mm, date)
@@ -169,7 +169,7 @@ def add_border(img, film='kodak_portra_400', frame=1, style=None, date=None, see
     return canvas
 
 
-def _fuji(img, film, frame, date, rng, rnd, mm, portrait, text):
+def _fuji(img, film, frame, date, rng, rnd, mm, portrait, text, glow=1.0):
     """富士样式：扫描仪裁掉齿孔，只剩上沿一条片边字。"""
     w, h = img.size
     pad, top, bot = int(0.35 * mm), int(1.45 * mm), int(0.55 * mm)
@@ -178,7 +178,7 @@ def _fuji(img, film, frame, date, rng, rnd, mm, portrait, text):
     base = _film_base(W, H, rng, (16, 12, 10))
     bright = Image.new('L', (W, H), 0)
     ImageDraw.Draw(bright).rectangle((x0, y0, x0 + w, y0 + h), fill=255)
-    base += _glow(bright, 0.5 * mm, 0.28, (255, 130, 50))
+    base += _glow(bright, 0.5 * mm, 0.28 * glow, (255, 130, 50))
     canvas = Image.fromarray(np.clip(base, 0, 255).astype(np.uint8))
 
     name = text or film.replace('fujifilm_', '').replace('_', '').upper()
@@ -241,8 +241,14 @@ def main():
     ap.add_argument('--frame', type=int, default=1)
     ap.add_argument('--date', default=None, help="日期印记，比如 \"'26 11 05\"")
     ap.add_argument('--text', default=None, help='自定义片边字')
+    ap.add_argument('--glow', type=float, default=1.0, help='边框橙色透光和漏光的强度，想更浓试 1.6')
+    ap.add_argument('--sharpen', type=float, default=0.0, help='加框前先锐化照片，0.6 左右比较自然')
     a = ap.parse_args()
-    out = add_border(Image.open(a.src).convert('RGB'), a.film, a.frame, a.style, a.date, text=a.text)
+    im = Image.open(a.src).convert('RGB')
+    if a.sharpen > 0:
+        r = max(1.0, max(im.size) / 1500)
+        im = im.filter(ImageFilter.UnsharpMask(radius=r, percent=int(160 * a.sharpen), threshold=3))
+    out = add_border(im, a.film, a.frame, a.style, a.date, text=a.text, glow=a.glow)
     out.save(a.dst, quality=97)
 
 
