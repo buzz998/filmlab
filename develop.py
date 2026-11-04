@@ -91,8 +91,53 @@ def auto_print_exposure(img, args, brighten=0.0):
     return pe
 
 
+FACE_TARGET = 0.50   # 遮挡后人脸亮度中位数的目标
+MAX_DODGE = 0.45     # 人脸最多少给这么多相纸曝光（0.45 ≈ 一档多一点）
+
+
+YUNET = Path(__file__).with_name('models') / 'face_detection_yunet_2023mar.onnx'
+
+
+def find_faces(img, decode):
+    """在原图上找人脸（OpenCV 的 YuNet 模型），返回 [(x, y, w, h), ...]。
+    背景路人的小脸不管：只留不小于最大那张脸一半的。"""
+    import cv2
+    a = np.clip(img, 0, 1)
+    if not decode:                     # RAW 读进来是线性的，转成看着正常的亮度再找
+        a = a ** (1 / 2.2)
+    bgr = np.ascontiguousarray((a * 255).astype(np.uint8)[..., ::-1])
+    h, w = bgr.shape[:2]
+    s = min(1.0, 1600 / max(h, w))     # 太大的图先缩小再找，快很多
+    small = cv2.resize(bgr, (int(w * s), int(h * s))) if s < 1 else bgr
+    det = cv2.FaceDetectorYN.create(str(YUNET), '', (small.shape[1], small.shape[0]), 0.7)
+    _, r = det.detect(small)
+    if r is None:
+        return []
+    faces = [tuple(int(v / s) for v in f[:4]) for f in r]
+    big = max(f[2] for f in faces)
+    return [f for f in faces if f[2] >= big * 0.5]
+
+
+def face_mask(shape, faces):
+    """人脸周围一个柔和的椭圆，包住头发和脖子，边缘慢慢过渡，像冲印师傅手里晃动的遮挡片。"""
+    import cv2
+    h, w = shape[:2]
+    m = np.zeros((h, w), np.float32)
+    for x, y, fw, fh in faces:
+        c = (int(x + fw / 2), int(y + fh * 0.55))
+        ax = (int(fw * 0.7), int(fh * 0.85))
+        cv2.ellipse(m, c, ax, 0, 0, 360, 1.0, -1)
+    k = int(max(15, max((f[2] for f in faces), default=40) * 0.6)) | 1
+    m = cv2.GaussianBlur(m, (0, 0), k / 2.5)
+    return np.clip(m / max(m.max(), 1e-6), 0, 1)[..., None]
+
+
+def _lum(x):
+    return x @ np.array([0.2126, 0.7152, 0.0722])
+
+
 def develop(src, dst_dir, film, paper, ev, fmt, maxside, print_exp, y_shift, m_shift, auto_exp=True,
-            frame=None, brighten=0.0):
+            frame=None, brighten=0.0, dodge=True):
     from spektrafilm import simulate
     img, space, decode = load(src, maxside)
     if print_exp is None:
@@ -100,6 +145,9 @@ def develop(src, dst_dir, film, paper, ev, fmt, maxside, print_exp, y_shift, m_s
                                         brighten)
     out = simulate(img, _params(film, paper, space, decode, ev, fmt, print_exp, y_shift, m_shift, auto_exp))
     out = np.clip(out, 0, 1)
+    if dodge:
+        out = _dodge_faces(img, out, decode, print_exp,
+                           (film, paper, space, decode, ev, fmt), (y_shift, m_shift, auto_exp))
     from PIL import Image
     dst = Path(dst_dir) / f"{src.stem}_{film}.jpg"
     im = Image.fromarray((out * 255 + 0.5).astype(np.uint8))
@@ -109,6 +157,29 @@ def develop(src, dst_dir, film, paper, ev, fmt, maxside, print_exp, y_shift, m_s
                         seed=sum(map(ord, src.name)))
     im.save(dst, quality=97)
     return dst, print_exp
+
+
+def _dodge_faces(img, out, decode, print_exp, a1, a2):
+    """暗房遮挡：脸太暗就给脸那一块少一点相纸曝光，再放一次，按柔和遮罩拼回去。
+    颗粒用的是固定种子，两次放出来的颗粒完全一样，接缝看不出来。"""
+    from spektrafilm import simulate
+    faces = find_faces(img, decode)
+    if not faces:
+        return out
+    m = face_mask(out.shape, faces)
+    # 只量脸中间的皮肤，不算头发和背景
+    skin = np.concatenate([_lum(out[y + fh // 4: y + fh * 3 // 4, x + fw // 4: x + fw * 3 // 4]).ravel()
+                           for x, y, fw, fh in faces])
+    lum = float(np.median(skin))
+    if lum >= FACE_TARGET - 0.03:
+        return out
+    factor = max(1 - MAX_DODGE, (lum / FACE_TARGET) ** (1 / SLOPE))
+    bright = np.clip(simulate(img, _params(*a1, print_exp * factor, *a2)), 0, 1)
+    # 本来就亮的地方（天空、白衣服）不跟着提，免得头周围冒一圈光
+    keep_hi = np.clip((0.78 - _lum(out)) / 0.3, 0, 1)[..., None]
+    m = m * keep_hi
+    print(f"   遮挡了 {len(faces)} 张脸，脸 {lum:.2f} -> 相纸曝光 ×{factor:.2f}", flush=True)
+    return out * (1 - m) + bright * m
 
 
 def main():
@@ -127,6 +198,7 @@ def main():
     ap.add_argument('--style', choices=['kodak', 'fuji', 'cine'], default=None,
                     help='边框样式，不填就按胶片自动选')
     ap.add_argument('--date', action='store_true', help='右下角印拍摄日期，像老相机的日期后背')
+    ap.add_argument('--no-dodge', action='store_true', help='不给人脸做遮挡提亮')
     ap.add_argument('--y', type=float, default=0)
     ap.add_argument('--m', type=float, default=0)
     a = ap.parse_args()
@@ -141,7 +213,8 @@ def main():
         try:
             d, pe = develop(f, a.dst, a.film, a.paper, a.ev, a.format, a.maxside,
                             a.print_exposure, a.y, a.m, not a.no_auto,
-                            frame=(i + 1) if a.border else None, brighten=a.brighten)
+                            frame=(i + 1) if a.border else None, brighten=a.brighten,
+                            dodge=not a.no_dodge)
             print(f"OK {f.name} -> {d.name}  相纸曝光 {pe:.2f}  ({time.time()-t:.0f}s)", flush=True)
         except Exception as e:
             print(f"FAIL {f.name}: {e}", flush=True)
