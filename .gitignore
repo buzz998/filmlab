@@ -1,0 +1,13 @@
+.venv/
+spektrafilm/
+__pycache__/
+*.jpg
+*.jpeg
+*.png
+*.tif
+*.tiff
+*.heic
+*.arw
+t*/
+test_out/
+tbig/

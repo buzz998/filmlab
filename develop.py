@@ -1,0 +1,90 @@
+"""冲洗照片：把 RAW / JPG 用 spektrafilm 引擎模拟成胶片 + 相纸的效果。
+
+用法:
+  python develop.py 输入文件或文件夹 输出文件夹 [--film kodak_portra_400] [--paper kodak_portra_endura]
+                   [--ev 0] [--format 35] [--maxside 3000]
+"""
+import argparse, os, sys, time
+from pathlib import Path
+import numpy as np
+
+RAW_EXT = {'.arw', '.cr2', '.cr3', '.nef', '.dng', '.raf', '.orf', '.rw2'}
+IMG_EXT = {'.jpg', '.jpeg', '.png', '.tif', '.tiff', '.heic'}
+
+
+def load(path, maxside):
+    from PIL import Image
+    ext = path.suffix.lower()
+    if ext in RAW_EXT:
+        from spektrafilm.utils.raw_file_processor import load_and_process_raw_file
+        img = load_and_process_raw_file(str(path), white_balance='as_shot',
+                                        output_colorspace='ProPhoto RGB')
+        space, decode = 'ProPhoto RGB', False
+    else:
+        if ext == '.heic':
+            from pillow_heif import register_heif_opener
+            register_heif_opener()
+        from PIL import ImageOps
+        im = ImageOps.exif_transpose(Image.open(path)).convert('RGB')
+        img = np.asarray(im).astype(np.float32) / 255.0
+        space, decode = 'sRGB', True
+    h, w = img.shape[:2]
+    scale = min(1.0, maxside / max(h, w))
+    if scale < 1.0:
+        from skimage.transform import resize
+        img = resize(img, (int(h * scale), int(w * scale)), anti_aliasing=True).astype(np.float32)
+    return img, space, decode
+
+
+def develop(src, dst_dir, film, paper, ev, fmt, maxside, print_exp, y_shift, m_shift, auto_exp=True):
+    from spektrafilm import init_params, simulate
+    img, space, decode = load(src, maxside)
+    p = init_params(film_profile=film, print_profile=paper)
+    p.io.input_color_space = space
+    p.io.input_cctf_decoding = decode
+    p.settings.use_enlarger_lut = True
+    p.settings.use_scanner_lut = True
+    p.film_render.grain.sublayers_active = True
+    p.camera.auto_exposure = auto_exp
+    p.camera.exposure_compensation_ev = ev
+    p.camera.film_format_mm = fmt
+    p.enlarger.print_exposure = print_exp
+    p.enlarger.y_filter_shift = y_shift
+    p.enlarger.m_filter_shift = m_shift
+    out = simulate(img, p)
+    out = np.clip(out, 0, 1)
+    from PIL import Image
+    dst = Path(dst_dir) / f"{src.stem}_{film}.jpg"
+    Image.fromarray((out * 255 + 0.5).astype(np.uint8)).save(dst, quality=94)
+    return dst
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('src'); ap.add_argument('dst')
+    ap.add_argument('--film', default='kodak_portra_400')
+    ap.add_argument('--paper', default='kodak_portra_endura')
+    ap.add_argument('--ev', type=float, default=0.0)
+    ap.add_argument('--format', type=float, default=35)
+    ap.add_argument('--maxside', type=int, default=3000)
+    ap.add_argument('--print-exposure', type=float, default=1.0)
+    ap.add_argument('--no-auto', action='store_true', help='关掉自动测光，按原片亮度')
+    ap.add_argument('--y', type=float, default=0)
+    ap.add_argument('--m', type=float, default=0)
+    a = ap.parse_args()
+    os.makedirs(a.dst, exist_ok=True)
+    src = Path(a.src)
+    files = sorted(f for f in (src.iterdir() if src.is_dir() else [src])
+                   if f.suffix.lower() in RAW_EXT | IMG_EXT)
+    for f in files:
+        t = time.time()
+        try:
+            d = develop(f, a.dst, a.film, a.paper, a.ev, a.format, a.maxside,
+                        a.print_exposure, a.y, a.m, not a.no_auto)
+            print(f"OK {f.name} -> {d.name} ({time.time()-t:.0f}s)", flush=True)
+        except Exception as e:
+            print(f"FAIL {f.name}: {e}", flush=True)
+
+
+if __name__ == '__main__':
+    main()
