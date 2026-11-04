@@ -27,10 +27,18 @@ python develop.py 照片文件夹 输出文件夹 --film kodak_portra_400 --prin
 
 ## 胶卷边框
 
-`border.py` 是自己写的，没有用 SpektraLab 的边框功能（那部分只在 Mac 上能用）。尺寸按 135 胶卷标准：片宽 35mm、画幅 36×24mm、齿孔 1.98×2.794mm、孔距 4.75mm。也可以单独给任意照片加框：
+`--border` 会按胶片自动选样式，也可以用 `--style` 指定：
+
+- `kodak`：柯达负片，上沿印型号和格数，下沿一排 DX 条码，齿孔完整
+- `fuji`：富士，扫描仪裁掉了齿孔，只剩上沿一条细细的等宽片边字
+- `cine`：电影卷（Vision3），印 EASTMAN 52xx，浅灰色字
+
+真实感来自三样：画面边缘和齿孔透出来的橙色光、胶卷一端的漏光、小而等宽的片边字。加 `--date` 会从照片拍摄时间生成老相机那种橙红色日期。
+
+边框是自己写的（`border.py`），SpektraLab 的边框功能只在 Mac 上能用。尺寸按 135 标准：片宽 35mm、画幅 36×24mm、KS 孔 1.98×2.794mm、孔距 4.75mm。单独给任意照片加框：
 
 ```bash
-python border.py 输入.jpg 输出.jpg --text "KODAK GOLD 200" --frame 7
+python border.py 输入.jpg 输出.jpg --film fujifilm_pro_400h --frame 14 --date "'26 11 05"
 ```
 
 ## 许可
