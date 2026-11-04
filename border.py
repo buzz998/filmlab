@@ -59,13 +59,7 @@ def add_border(img, text='', frame=None, look='negative', seed=None):
     base = np.asarray(canvas, dtype=np.float32) + (blot - 128) * 0.06 + fine
     canvas = Image.fromarray(np.clip(base, 0, 255).astype(np.uint8))
 
-    # 画面：边缘稍微柔一点，像片门投下的影子
     x0, y0 = int(1.0 * mm), int(5.5 * mm)
-    mask = Image.new('L', (w, h), 0)
-    ImageDraw.Draw(mask).rounded_rectangle((0, 0, w - 1, h - 1), radius=int(0.35 * mm), fill=255)
-    mask = mask.filter(ImageFilter.GaussianBlur(0.12 * mm))
-    canvas.paste(img, (x0, y0), mask)
-
     d = ImageDraw.Draw(canvas)
     # 齿孔：每格 8 个，间距 4.75mm，上下各一排；起点随机偏一点，每张不一样
     # KS 标准孔：沿片长 1.98mm，沿片宽 2.794mm，离片边 2.01mm
@@ -90,6 +84,12 @@ def add_border(img, text='', frame=None, look='negative', seed=None):
 
     # 字和孔边有一点点晕开
     canvas = canvas.filter(ImageFilter.GaussianBlur(0.03 * mm))
+
+    # 最后才贴照片，保证照片本身不被柔化；只有边缘柔一点，像片门投下的影子
+    mask = Image.new('L', (w, h), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, w - 1, h - 1), radius=int(0.35 * mm), fill=255)
+    mask = mask.filter(ImageFilter.GaussianBlur(0.12 * mm))
+    canvas.paste(img, (x0, y0), mask)
     if portrait:
         canvas = canvas.rotate(-90, expand=True)
     return canvas
