@@ -37,7 +37,7 @@ def load(path, maxside):
     return img, space, decode
 
 
-BORDER_STYLE, DATE = None, False
+BORDER_STYLE, DATE, MIX = None, False, 1.0
 
 
 def _date_text(src):
@@ -149,6 +149,10 @@ def develop(src, dst_dir, film, paper, ev, fmt, maxside, print_exp, y_shift, m_s
     if dodge:
         out = _dodge_faces(img, out, decode, print_exp,
                            (film, paper, space, decode, ev, fmt), (y_shift, m_shift, auto_exp))
+    if MIX < 1.0:   # 只上一部分胶片味：和原图按比例混合
+        orig = np.clip(img, 0, 1) if decode else np.clip(__import__('colour').RGB_to_RGB(
+            img, 'ProPhoto RGB', 'sRGB', apply_cctf_encoding=True), 0, 1)
+        out = orig * (1 - MIX) + out * MIX
     from PIL import Image
     dst = Path(dst_dir) / f"{src.stem}_{film}.jpg"
     im = Image.fromarray((out * 255 + 0.5).astype(np.uint8))
@@ -200,12 +204,14 @@ def main():
     ap.add_argument('--style', choices=['kodak', 'fuji', 'cine'], default=None,
                     help='边框样式，不填就按胶片自动选')
     ap.add_argument('--date', action='store_true', help='右下角印拍摄日期，像老相机的日期后背')
+    ap.add_argument('--mix', type=float, default=1.0, help='胶片味浓度，1 是全胶片，0.6 就是六成胶片四成原图')
     ap.add_argument('--no-dodge', action='store_true', help='不给人脸做遮挡提亮')
     ap.add_argument('--dodge', type=float, default=1.0, help='人脸遮挡力度，默认 1，整个人在背光里的照片试 0.5')
     ap.add_argument('--y', type=float, default=0)
     ap.add_argument('--m', type=float, default=0)
     a = ap.parse_args()
-    global BORDER_STYLE, DATE, DODGE_STRENGTH
+    global BORDER_STYLE, DATE, DODGE_STRENGTH, MIX
+    MIX = a.mix
     DODGE_STRENGTH = a.dodge
     BORDER_STYLE, DATE = a.style, a.date
     os.makedirs(a.dst, exist_ok=True)
