@@ -19,7 +19,9 @@ python develop.py 照片文件夹 输出文件夹 --film kodak_portra_400 --prin
 
 - `--film`：胶片，比如 `kodak_portra_400`、`kodak_gold_200`、`kodak_ektar_100`、`fujifilm_pro_400h`、`fujifilm_velvia_100`、`kodak_kodachrome_64`。完整列表在 `spektrafilm/src/spektrafilm/data/profiles/`
 - `--paper`：相纸，默认 `kodak_portra_endura`
-- `--print-exposure`：**调亮度就调这个**。数字越大，成片越暗、越沉。暗调照片可以试 2～3
+- `--print-exposure`：相纸曝光，数字越大越暗。**一般不用填**，不填会自动定亮度：先用小图试冲两三次，把成片亮度调到合适（逆光、大片天空也不会被骗）
+- `--brighten`：在自动亮度基础上再亮一点（正数）或暗一点（负数），单位大约一档，比如 `--brighten 0.5`
+- `--m` / `--y`：放大机的品红/黄滤镜，用来偏色。港风青绿调可以试 `--m 8 --y -4`
 - `--ev`：相机曝光补偿。会被放大机自动抵消大部分，主要影响胶片的宽容度，不怎么改亮度
 - `--format`：底片画幅（毫米），默认 35，改成 120 颗粒会变细
 - `--border`：加 135 胶卷边框，有齿孔、片边印胶片型号、格数按文件顺序自动往上数。竖图会把胶卷转过来；非 3:2 的照片会裁成 3:2，和真胶卷一样

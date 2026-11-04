@@ -51,9 +51,12 @@ def _date_text(src):
         return None
 
 
-def develop(src, dst_dir, film, paper, ev, fmt, maxside, print_exp, y_shift, m_shift, auto_exp=True, frame=None):
-    from spektrafilm import init_params, simulate
-    img, space, decode = load(src, maxside)
+TARGET = 0.49      # 成片亮度中位数的目标，按调好的样片校准
+SLOPE = 0.84       # 亮度大约和 相纸曝光^-0.84 成正比
+
+
+def _params(film, paper, space, decode, ev, fmt, print_exp, y_shift, m_shift, auto_exp):
+    from spektrafilm import init_params
     p = init_params(film_profile=film, print_profile=paper)
     p.io.input_color_space = space
     p.io.input_cctf_decoding = decode
@@ -66,7 +69,36 @@ def develop(src, dst_dir, film, paper, ev, fmt, maxside, print_exp, y_shift, m_s
     p.enlarger.print_exposure = print_exp
     p.enlarger.y_filter_shift = y_shift
     p.enlarger.m_filter_shift = m_shift
-    out = simulate(img, p)
+    return p
+
+
+def auto_print_exposure(img, args, brighten=0.0):
+    """用小图试冲两三次，找到让成片亮度中位数接近 TARGET 的相纸曝光。
+    brighten: 想整体再亮/暗一点就给正/负数（单位约等于档）。"""
+    from spektrafilm import simulate
+    from skimage.transform import resize
+    h, w = img.shape[:2]
+    s = 500 / max(h, w)
+    small = resize(img, (max(8, int(h * s)), max(8, int(w * s))), anti_aliasing=True).astype(np.float32)
+    target = min(0.75, TARGET * 2 ** (brighten * 0.5))
+    pe = 1.0
+    for _ in range(3):
+        out = np.clip(simulate(small, _params(*args[:6], pe, *args[6:])), 0, 1)
+        lum = float(np.median(out @ np.array([0.2126, 0.7152, 0.0722])))
+        if abs(lum - target) < 0.02:
+            break
+        pe = float(np.clip(pe * (max(lum, 1e-3) / target) ** (1 / SLOPE), 0.1, 6.0))
+    return pe
+
+
+def develop(src, dst_dir, film, paper, ev, fmt, maxside, print_exp, y_shift, m_shift, auto_exp=True,
+            frame=None, brighten=0.0):
+    from spektrafilm import simulate
+    img, space, decode = load(src, maxside)
+    if print_exp is None:
+        print_exp = auto_print_exposure(img, (film, paper, space, decode, ev, fmt, y_shift, m_shift, auto_exp),
+                                        brighten)
+    out = simulate(img, _params(film, paper, space, decode, ev, fmt, print_exp, y_shift, m_shift, auto_exp))
     out = np.clip(out, 0, 1)
     from PIL import Image
     dst = Path(dst_dir) / f"{src.stem}_{film}.jpg"
@@ -76,7 +108,7 @@ def develop(src, dst_dir, film, paper, ev, fmt, maxside, print_exp, y_shift, m_s
         im = add_border(im, film, frame, style=BORDER_STYLE, date=_date_text(src) if DATE else None,
                         seed=sum(map(ord, src.name)))
     im.save(dst, quality=97)
-    return dst
+    return dst, print_exp
 
 
 def main():
@@ -87,7 +119,9 @@ def main():
     ap.add_argument('--ev', type=float, default=0.0)
     ap.add_argument('--format', type=float, default=35)
     ap.add_argument('--maxside', type=int, default=6000)
-    ap.add_argument('--print-exposure', type=float, default=1.0)
+    ap.add_argument('--print-exposure', type=float, default=None,
+                    help='相纸曝光，越大越暗；不填就自动定亮度')
+    ap.add_argument('--brighten', type=float, default=0.0, help='自动亮度基础上再亮(正)/暗(负)，单位约等于档')
     ap.add_argument('--no-auto', action='store_true', help='关掉自动测光，按原片亮度')
     ap.add_argument('--border', action='store_true', help='加胶卷边框（齿孔、片边字）')
     ap.add_argument('--style', choices=['kodak', 'fuji', 'cine'], default=None,
@@ -105,10 +139,10 @@ def main():
     for i, f in enumerate(files):
         t = time.time()
         try:
-            d = develop(f, a.dst, a.film, a.paper, a.ev, a.format, a.maxside,
-                        a.print_exposure, a.y, a.m, not a.no_auto,
-                        frame=(i + 1) if a.border else None)
-            print(f"OK {f.name} -> {d.name} ({time.time()-t:.0f}s)", flush=True)
+            d, pe = develop(f, a.dst, a.film, a.paper, a.ev, a.format, a.maxside,
+                            a.print_exposure, a.y, a.m, not a.no_auto,
+                            frame=(i + 1) if a.border else None, brighten=a.brighten)
+            print(f"OK {f.name} -> {d.name}  相纸曝光 {pe:.2f}  ({time.time()-t:.0f}s)", flush=True)
         except Exception as e:
             print(f"FAIL {f.name}: {e}", flush=True)
 
