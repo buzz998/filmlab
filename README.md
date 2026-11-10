@@ -49,6 +49,16 @@ python border.py 输入.jpg 输出.jpg --film fujifilm_pro_400h --frame 14 --dat
 python border.py 输入.jpg 输出.jpg --film kodak_gold_200 --sharpen 0.7 --glow 1.7 --keep bottom
 ```
 
+## 动态（实况）小视频
+
+`live/animate.py` 把一张冲好的照片做成 3 秒无缝循环的小动效，带胶卷边框：鸟被抠出来扇翅膀、轻轻飘（背景自动补好），水面高光闪动，草被风吹得轻摆，远山的雾慢慢流，加上每帧不同的胶片颗粒和片门轻晃。
+
+```bash
+python live/animate.py 冲好的照片.jpg 输出.mp4 --film kodak_gold_200 --frame 12 --still 封面.jpg
+```
+
+鸟、水、草、雾的位置是按画面自动找的，目前按"天空 + 地平线 + 近景"这类照片调的，别的构图可能要改 `--bird-ymax` 等参数。iPhone 的实况照片需要苹果设备或 App 配对，可以在手机上用"实况Live"、intoLive 这类 App 把视频转成实况。
+
 ## 许可
 
 本仓库脚本按 GPL-3.0 发布，和 spektrafilm 一致。胶片与相纸数据为 CC BY-SA 4.0。字体 DejaVu Sans 为其自由许可。film modeling powered by spektrafilm.

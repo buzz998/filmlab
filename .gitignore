@@ -11,3 +11,6 @@ __pycache__/
 t*/
 test_out/
 tbig/
+*.mp4
+*.mov
+live/fr/
