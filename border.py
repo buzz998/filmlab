@@ -43,13 +43,16 @@ def _font(path, px):
         return ImageFont.load_default(max(6, int(px)))
 
 
-def _to_32(img):
-    """裁成 3:2，和真胶卷画幅一样。"""
+def _to_32(img, keep='center'):
+    """裁成 3:2，和真胶卷画幅一样。keep: 保留哪一边 —— center / top / bottom（竖图里 top/bottom 就是上/下）。"""
     w, h = img.size
     if w / h > 1.5:
-        nw = int(h * 1.5); img = img.crop(((w - nw) // 2, 0, (w - nw) // 2 + nw, h))
+        nw = int(h * 1.5); x = (w - nw) // 2
+        img = img.crop((x, 0, x + nw, h))
     elif w / h < 1.5:
-        nh = int(w / 1.5); img = img.crop((0, (h - nh) // 2, w, (h - nh) // 2 + nh))
+        nh = int(w / 1.5)
+        y = {'top': 0, 'bottom': h - nh}.get(keep, (h - nh) // 2)
+        img = img.crop((0, y, w, y + nh))
     return img
 
 
@@ -73,15 +76,19 @@ def _soft(layer_l, r):
     return layer_l.filter(ImageFilter.GaussianBlur(r))
 
 
-def add_border(img, film='kodak_portra_400', frame=1, style=None, date=None, seed=None, text=None, glow=1.0):
+def add_border(img, film='kodak_portra_400', frame=1, style=None, date=None, seed=None, text=None, glow=1.0, keep='center'):
     """img: 冲好的 PIL.Image。返回加了边框的新图。"""
     style = style or style_for(film)
     rng = np.random.default_rng(seed)
     rnd = random.Random(seed)
     portrait = img.height > img.width
-    if portrait:
+    if portrait:   # 竖图：先按上下裁成 2:3，再转过来
+        w0, h0 = img.size
+        nh = min(h0, int(w0 * 1.5))
+        y = {'top': 0, 'bottom': h0 - nh}.get(keep, (h0 - nh) // 2)
+        img = img.crop((0, y, w0, y + nh))
         img = img.rotate(90, expand=True)
-    img = _to_32(img)
+    img = _to_32(img, keep)
     w, h = img.size
     mm = w / 36.0
 
@@ -241,6 +248,8 @@ def main():
     ap.add_argument('--frame', type=int, default=1)
     ap.add_argument('--date', default=None, help="日期印记，比如 \"'26 11 05\"")
     ap.add_argument('--text', default=None, help='自定义片边字')
+    ap.add_argument('--keep', choices=['center', 'top', 'bottom'], default='center',
+                    help='裁成 3:2 时保留哪边：bottom 就是只裁上面（天空多的照片常用）')
     ap.add_argument('--glow', type=float, default=1.0, help='边框橙色透光和漏光的强度，想更浓试 1.6')
     ap.add_argument('--sharpen', type=float, default=0.0, help='加框前先锐化照片，0.6 左右比较自然')
     a = ap.parse_args()
@@ -248,7 +257,7 @@ def main():
     if a.sharpen > 0:
         r = max(1.0, max(im.size) / 1500)
         im = im.filter(ImageFilter.UnsharpMask(radius=r, percent=int(160 * a.sharpen), threshold=3))
-    out = add_border(im, a.film, a.frame, a.style, a.date, text=a.text, glow=a.glow)
+    out = add_border(im, a.film, a.frame, a.style, a.date, text=a.text, glow=a.glow, keep=a.keep)
     out.save(a.dst, quality=97)
 
 

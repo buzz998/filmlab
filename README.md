@@ -45,8 +45,8 @@ python develop.py 照片文件夹 输出文件夹 --film kodak_portra_400 --prin
 ```bash
 python border.py 输入.jpg 输出.jpg --film fujifilm_pro_400h --frame 14 --date "'26 11 05"
 
-# 照片先锐化一点，边框透光和漏光更浓
-python border.py 输入.jpg 输出.jpg --film kodak_gold_200 --sharpen 0.7 --glow 1.7
+# 照片先锐化一点，边框透光和漏光更浓；--keep bottom 只裁上面，下面不动
+python border.py 输入.jpg 输出.jpg --film kodak_gold_200 --sharpen 0.7 --glow 1.7 --keep bottom
 ```
 
 ## 许可
